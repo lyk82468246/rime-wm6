@@ -1,0 +1,54 @@
+# Build outputs (per-project under each .vcproj)
+**/Windows Mobile 6 Professional SDK (ARMV4I)/
+**/Windows Mobile 6 Standard SDK*/
+
+# Visual Studio 2008 per-user state
+*.user
+*.suo
+*.ncb
+*.aps
+*.opensdf
+*.sdf
+.vs/
+
+# Build intermediates / artifacts
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.idb
+*.bsc
+*.tlog
+*.lastbuildstate
+*.cache
+BuildLog.htm
+
+# CAB packaging intermediates
+*.cab
+*.dat
+*.000
+*.001
+*.002
+WMRime.dsm
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# OS junk
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Editor backups
+*~
+*.swp
+*.bak
+
+# Local secrets / scratch
+/scratch/
+/tmp/
+
+# Claude Code per-user settings (not portable)
+.claude/settings.local.json

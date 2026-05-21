@@ -1,0 +1,22 @@
+- [Project goal](project_goal.md) — porting Rime IME engine to Windows Mobile 6.5 / WinCE 6.0 (ARMV4I/ARMV5, MSVC 9.0, C++03)
+- [Mirror directory layout](mirror_layout.md) — upstream src/librime/ stays pristine; WinCE port lives in src/librime_wince/ + src/wince_compat/
+- [MVP trim scope](mvp_trim.md) — features cut for first viable build: OpenCC, LevelDB/user_db, dict_compiler, yaml-cpp, glog, threading, timestamps
+- [Build setup](build_setup.md) — VS2008 .sln/.vcproj at rime-wm6/, build.bat at repo root invokes devenv with ARMV4I config
+- [RTTI required in vcproj](rtti_required.md) — WinCE default is /GR-; rime's As/Is dispatch needs RuntimeTypeInfo=true or breaks silently
+- [Encoding boundaries](encoding_boundaries.md) — librime is UTF-8 (char), WinCE Win32/COM is UTF-16 (wchar_t); conversion confined to WMRimeSIP shell layer
+- [Don't write a custom DllMain on WinCE/MSVC9](feedback_dllmain_msvc9.md) — every variant triggers C2731; use static initializer or .CRT$XCU instead
+- [Keep WinCE port source files ASCII-only](feedback_ascii_only.md) — MSVC9 on Chinese-locale Windows reads UTF-8 without BOM as CP936 and emits C4819
+- [Run build.bat automatically](feedback_auto_build.md) — user authorized me to invoke `./build.bat` myself instead of asking them to run it
+- [YAML config is rime's soul](feedback_yaml_essence.md) — hardcoded ConfigData is temporary MVP scaffolding; real yaml parser must come back later
+- [an<>/the<>/of<> gotchas](feedback_alias_pointer_gotchas.md) — no raw-pointer ctor on the wrappers; sibling aliases can't bind references to each other
+- [vc80.pdb lock recovery](feedback_pdb_lock.md) — C2471/C1083 on vc80.pdb means delete-the-pdb-and-rebuild, not a real code bug
+- [MSVC9 C2027 on inline virtual bodies](feedback_msvc9_inline_body_c2027.md) — inline default body with fwd-decl'd param-type wrongly demands completeness; move body to .cc
+- [WinCE missing libc time()](feedback_wince_time.md) — coredll.lib doesn't export time(); we ship wince_compat/time.cc wrapping GetTickCount
+- [marisa-trie blocker for dict port](project_marisa_fork.md) — table.h/dictionary.cc need marisa; mapped_file/vocabulary/prism are done, need vendor-vs-stub decision before resuming
+- [Desktop dict-build workflow](reference_dict_workflow.md) — tools/build_dict.py + inspect_bin.py + verify_dict.py: how to convert luna_pinyin.dict.yaml → .prism.bin + .table.bin and sanity-check on host
+- [PinyinTranslator MVP shape](project_pinyin_translator_mvp.md) — gear/pinyin_translator is ~120 lines, deliberately skips Memory/Poet/UserDict/Corrector/TranslatorOptions vs upstream's 704-line script_translator
+- [YAML parser scope](project_yaml_parser_scope.md) — hand-written ~600-line config/yaml_parser handles block/flow/scalars/literal `|`; no anchors/aliases/merge/folded/tags
+- [rime_api MVP shape](project_rime_api_mvp.md) — C export surface uses MiniSession that bypasses Engine; PinyinTranslator loaded once at Initialize, no deployer/schema-list/config-iter exposed
+- [WMRimeSIP MVP shape](project_wmrime_sip_mvp.md) — COM SIP shell in src/wmrime_sip/, soft-keyboard mode, subclasses SIP hwnd's WNDPROC, calls rime_api + IIMCallback::SendString
+- [WinCE COM DLL gotchas](feedback_wince_com_dll.md) — three traps when writing a COM in-proc server on WinCE/MSVC9: use .def file, INITGUID in one TU, no SetPropW
+

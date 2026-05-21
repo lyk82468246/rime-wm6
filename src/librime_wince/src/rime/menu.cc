@@ -1,0 +1,74 @@
+//
+// rime/menu.cc -- WinCE-port mirror of upstream menu.cc.
+//
+// Changes vs. upstream:
+//   * `auto cand = ...` -> explicit an<Candidate>.
+//   * `nullptr` (as an<T>) -> default an<T>().
+//   * `new MergedTranslation(...)` left as raw new since MergedTranslation
+//     ctor is taken by reference; same as upstream.
+//
+#include <algorithm>
+#include <iterator>
+#include <rime/filter.h>
+#include <rime/menu.h>
+#include <rime/translation.h>
+
+namespace rime {
+
+Menu::Menu()
+    : merged_(New<MergedTranslation>(candidates_)), result_(merged_) {}
+
+void Menu::AddTranslation(an<Translation> translation) {
+  *merged_ += translation;
+}
+
+void Menu::AddFilter(Filter* filter) {
+  result_ = filter->Apply(result_, &candidates_);
+}
+
+size_t Menu::Prepare(size_t requested) {
+  while (candidates_.size() < requested && !result_->exhausted()) {
+    an<Candidate> cand = result_->Peek();
+    if (cand) {
+      candidates_.push_back(cand);
+    }
+    result_->Next();
+  }
+  return candidates_.size();
+}
+
+Page* Menu::CreatePage(size_t page_size, size_t page_no) {
+  size_t start_pos = page_size * page_no;
+  size_t end_pos = start_pos + page_size;
+  if (end_pos > candidates_.size()) {
+    if (result_->exhausted())
+      end_pos = candidates_.size();
+    else
+      end_pos = Prepare(end_pos);
+    if (start_pos >= end_pos)
+      return NULL;
+    end_pos = (std::min)(start_pos + page_size, end_pos);
+  }
+  Page* page = new Page;
+  if (!page)
+    return NULL;
+  page->page_size = static_cast<int>(page_size);
+  page->page_no = static_cast<int>(page_no);
+  page->is_last_page = result_->exhausted() && (end_pos == candidates_.size());
+  std::copy(candidates_.begin() + start_pos, candidates_.begin() + end_pos,
+            std::back_inserter(page->candidates));
+  return page;
+}
+
+an<Candidate> Menu::GetCandidateAt(size_t index) {
+  if (index >= candidates_.size() && index >= Prepare(index + 1)) {
+    return an<Candidate>();
+  }
+  return candidates_[index];
+}
+
+bool Menu::empty() const {
+  return candidates_.empty() && result_->exhausted();
+}
+
+}  // namespace rime
