@@ -87,19 +87,25 @@ HKLM,"Software\WMRime",,0x00000000,
 HKLM,"Software\WMRime","SharedDataDir",0x00000000,"%InstallDir%\data"
 
 ; ---------- Registry: SIP enumeration (so the shell shows "WMRime") ----------
-; Replace {7B9F6D8E-4A2C-4F1E-9D6B-3E5A8C2D1F47} with your CLSID_WMRimeSIP
+; Replace {7B9F6D8E-4A2C-4F1E-9D6B-3E5A8C2D1F47} with your CLSID_WMRimeSIP.
+; IMPORTANT: IsSIPInputMethod must be REG_DWORD (flag 0x00010001), not
+; REG_SZ. The shell's SIP enumerator silently skips entries with the
+; wrong type, and your input method won't appear in the picker.
 [Reg.SIP]
-HKLM,"Software\Microsoft\Shell\Keybd\{7B9F6D8E-4A2C-4F1E-9D6B-3E5A8C2D1F47}",,0,
-HKLM,"Software\Microsoft\Shell\Keybd\{7B9F6D8E-4A2C-4F1E-9D6B-3E5A8C2D1F47}","Name",0,"WMRime"
-HKLM,"Software\Microsoft\Shell\Keybd\{7B9F6D8E-4A2C-4F1E-9D6B-3E5A8C2D1F47}","IsSIPInputMethod",0,"1"
+HKLM,"Software\Microsoft\Shell\Keybd\{7B9F6D8E-4A2C-4F1E-9D6B-3E5A8C2D1F47}","Name",0x00000000,"WMRime"
+HKLM,"Software\Microsoft\Shell\Keybd\{7B9F6D8E-4A2C-4F1E-9D6B-3E5A8C2D1F47}","IsSIPInputMethod",0x00010001,1
+HKLM,"Software\Microsoft\Shell\Keybd\{7B9F6D8E-4A2C-4F1E-9D6B-3E5A8C2D1F47}","PreferredImage",0x00010001,0
 
-; ---------- Registry: COM CLSID -> DLL ----------
+; ---------- Registry: COM CLSID -> DLL (mirror under HKLM\Classes + HKCR) ----------
 [Reg.CLSID]
-HKLM,"Software\Classes\CLSID\{7B9F6D8E-4A2C-4F1E-9D6B-3E5A8C2D1F47}",,0,"WMRime SIP"
+HKLM,"Software\Classes\CLSID\{7B9F6D8E-4A2C-4F1E-9D6B-3E5A8C2D1F47}",,0x00000000,"WMRime SIP"
+HKCR,"CLSID\{7B9F6D8E-4A2C-4F1E-9D6B-3E5A8C2D1F47}",,0x00000000,"WMRime SIP"
 
 [Reg.InprocServer]
-HKLM,"Software\Classes\CLSID\{7B9F6D8E-4A2C-4F1E-9D6B-3E5A8C2D1F47}\InprocServer32",,0,"%InstallDir%\WMRimeSIP.dll"
-HKLM,"Software\Classes\CLSID\{7B9F6D8E-4A2C-4F1E-9D6B-3E5A8C2D1F47}\InprocServer32","ThreadingModel",0,"Apartment"
+HKLM,"Software\Classes\CLSID\{7B9F6D8E-4A2C-4F1E-9D6B-3E5A8C2D1F47}\InprocServer32",,0x00000000,"%InstallDir%\WMRimeSIP.dll"
+HKLM,"Software\Classes\CLSID\{7B9F6D8E-4A2C-4F1E-9D6B-3E5A8C2D1F47}\InprocServer32","ThreadingModel",0x00000000,"Apartment"
+HKCR,"CLSID\{7B9F6D8E-4A2C-4F1E-9D6B-3E5A8C2D1F47}\InprocServer32",,0x00000000,"%InstallDir%\WMRimeSIP.dll"
+HKCR,"CLSID\{7B9F6D8E-4A2C-4F1E-9D6B-3E5A8C2D1F47}\InprocServer32","ThreadingModel",0x00000000,"Apartment"
 ```
 
 ### 几个 INF 语法的小坑

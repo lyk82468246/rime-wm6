@@ -179,6 +179,19 @@ static LONG WriteRegStringW(HKEY root, const wchar_t* subkey,
   return err;
 }
 
+// Helper: write a DWORD value to an existing or newly-created key.
+static LONG WriteRegDwordW(HKEY root, const wchar_t* subkey,
+                           const wchar_t* name, DWORD value) {
+  HKEY hKey = NULL;
+  DWORD disp = 0;
+  LONG err = RegCreateKeyExW(root, subkey, 0, NULL, 0, 0, NULL, &hKey, &disp);
+  if (err != ERROR_SUCCESS) return err;
+  err = RegSetValueExW(hKey, name, 0, REG_DWORD,
+                       reinterpret_cast<const BYTE*>(&value), sizeof(value));
+  RegCloseKey(hKey);
+  return err;
+}
+
 // Format the CLSID as "{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}" in UTF-16.
 static void FormatClsid(REFCLSID clsid, wchar_t* buf, size_t n) {
   StringFromGUID2(clsid, buf, static_cast<int>(n));
@@ -202,14 +215,27 @@ DllRegisterServer(void) {
   wsprintfW(key, L"Software\\Classes\\CLSID\\%s\\InprocServer32", clsid_str);
   err = WriteRegStringW(HKEY_LOCAL_MACHINE, key, NULL, module_path);
   if (err != ERROR_SUCCESS) return E_FAIL;
+  err = WriteRegStringW(HKEY_LOCAL_MACHINE, key, L"ThreadingModel", L"Apartment");
+  if (err != ERROR_SUCCESS) return E_FAIL;
 
-  // Register as an SIP under HKLM\Software\Microsoft\Shell\Keybd\{ours}
-  // Name and IsSIPInputMethod are the keys the shell SIP picker reads.
+  // Some WinCE COM consumers query HKCR\CLSID directly rather than
+  // HKLM\Software\Classes\CLSID, so mirror the registration under both.
+  wsprintfW(key, L"CLSID\\%s", clsid_str);
+  WriteRegStringW(HKEY_CLASSES_ROOT, key, NULL, L"WMRime SIP");
+  wsprintfW(key, L"CLSID\\%s\\InprocServer32", clsid_str);
+  WriteRegStringW(HKEY_CLASSES_ROOT, key, NULL, module_path);
+  WriteRegStringW(HKEY_CLASSES_ROOT, key, L"ThreadingModel", L"Apartment");
+
+  // Register as an SIP under HKLM\Software\Microsoft\Shell\Keybd\{ours}.
+  // The shell SIP picker enumerates this subkey and filters entries
+  // whose IsSIPInputMethod == REG_DWORD 1. A REG_SZ "1" is silently
+  // rejected -- caught us once already.
   wsprintfW(key, L"Software\\Microsoft\\Shell\\Keybd\\%s", clsid_str);
   err = WriteRegStringW(HKEY_LOCAL_MACHINE, key, L"Name", L"WMRime");
   if (err != ERROR_SUCCESS) return E_FAIL;
-  err = WriteRegStringW(HKEY_LOCAL_MACHINE, key, L"IsSIPInputMethod", L"1");
+  err = WriteRegDwordW(HKEY_LOCAL_MACHINE, key, L"IsSIPInputMethod", 1);
   if (err != ERROR_SUCCESS) return E_FAIL;
+  WriteRegDwordW(HKEY_LOCAL_MACHINE, key, L"PreferredImage", 0);
 
   return S_OK;
 }
@@ -228,6 +254,12 @@ DllUnregisterServer(void) {
 
   wsprintfW(key, L"Software\\Classes\\CLSID\\%s", clsid_str);
   RegDeleteKeyW(HKEY_LOCAL_MACHINE, key);
+
+  // Mirror under HKCR (best-effort; ignore errors if not present).
+  wsprintfW(key, L"CLSID\\%s\\InprocServer32", clsid_str);
+  RegDeleteKeyW(HKEY_CLASSES_ROOT, key);
+  wsprintfW(key, L"CLSID\\%s", clsid_str);
+  RegDeleteKeyW(HKEY_CLASSES_ROOT, key);
 
   return S_OK;
 }

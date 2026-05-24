@@ -1,0 +1,61 @@
+[Version]
+Signature   = "$Windows NT$"
+Provider    = "WMRime"
+CESignature = "$Windows CE$"
+
+[CEStrings]
+AppName    = "WMRime"
+InstallDir = %CE1%\%AppName%
+
+[Strings]
+Manufacturer = "WMRime Project"
+ProductName  = "WMRime Input Method"
+
+[CEDevice]
+ProcessorType = 2577
+VersionMin    = 5.0
+VersionMax    = 7.99
+
+[DefaultInstall]
+CopyFiles  = Files.Bin, Files.Data
+AddReg     = Reg.WMRime, Reg.SIP, Reg.CLSID, Reg.InprocServer
+CESetupDLL = ""
+
+[SourceDisksNames]
+1 = , "Common files",, .
+
+[SourceDisksFiles]
+RimeCore.dll               = 1
+WMRimeSIP.dll              = 1
+luna_pinyin.prism.bin      = 1
+luna_pinyin.table.bin      = 1
+
+[DestinationDirs]
+Files.Bin       = 0, %InstallDir%
+Files.Data      = 0, %InstallDir%\data
+
+[Files.Bin]
+RimeCore.dll
+WMRimeSIP.dll
+
+[Files.Data]
+luna_pinyin.prism.bin
+luna_pinyin.table.bin
+
+[Reg.WMRime]
+HKLM,"Software\WMRime","SharedDataDir",0x00000000,"%InstallDir%\data"
+
+[Reg.SIP]
+HKLM,"Software\Microsoft\Shell\Keybd\{7B9F6D8E-4A2C-4F1E-9D6B-3E5A8C2D1F47}","Name",0x00000000,"WMRime"
+HKLM,"Software\Microsoft\Shell\Keybd\{7B9F6D8E-4A2C-4F1E-9D6B-3E5A8C2D1F47}","IsSIPInputMethod",0x00010001,1
+HKLM,"Software\Microsoft\Shell\Keybd\{7B9F6D8E-4A2C-4F1E-9D6B-3E5A8C2D1F47}","PreferredImage",0x00010001,0
+
+[Reg.CLSID]
+HKLM,"Software\Classes\CLSID\{7B9F6D8E-4A2C-4F1E-9D6B-3E5A8C2D1F47}",,0x00000000,"WMRime SIP"
+HKCR,"CLSID\{7B9F6D8E-4A2C-4F1E-9D6B-3E5A8C2D1F47}",,0x00000000,"WMRime SIP"
+
+[Reg.InprocServer]
+HKLM,"Software\Classes\CLSID\{7B9F6D8E-4A2C-4F1E-9D6B-3E5A8C2D1F47}\InprocServer32",,0x00000000,"%InstallDir%\WMRimeSIP.dll"
+HKLM,"Software\Classes\CLSID\{7B9F6D8E-4A2C-4F1E-9D6B-3E5A8C2D1F47}\InprocServer32","ThreadingModel",0x00000000,"Apartment"
+HKCR,"CLSID\{7B9F6D8E-4A2C-4F1E-9D6B-3E5A8C2D1F47}\InprocServer32",,0x00000000,"%InstallDir%\WMRimeSIP.dll"
+HKCR,"CLSID\{7B9F6D8E-4A2C-4F1E-9D6B-3E5A8C2D1F47}\InprocServer32","ThreadingModel",0x00000000,"Apartment"
