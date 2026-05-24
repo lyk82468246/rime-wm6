@@ -164,8 +164,26 @@ STDMETHODIMP RimeInputMethod::Showing() {
   LogLine("Showing entered");
   visible_ = true;
   if (panel_hwnd_) {
+    // Log the current window state so we can diagnose visibility issues.
+    LONG style = GetWindowLongW(panel_hwnd_, GWL_STYLE);
+    LogLineHex("Showing: GWL_STYLE=", static_cast<unsigned int>(style));
+    LogLineInt("Showing: IsWindowVisible=", IsWindowVisible(panel_hwnd_) ? 1 : 0);
+    RECT wr;
+    GetWindowRect(panel_hwnd_, &wr);
+    LogLineInt("Showing: WindowRect.left=", wr.left);
+    LogLineInt("Showing: WindowRect.top=", wr.top);
+    LogLineInt("Showing: WindowRect.right=", wr.right);
+    LogLineInt("Showing: WindowRect.bottom=", wr.bottom);
+
     RefreshFromRime(&panel_);
+    // Force the window visible + immediately repaint. The SIP framework
+    // normally manages visibility itself, but on some WM6 builds the
+    // SW_SHOW is gated on the IM's response; doing it ourselves is
+    // defensive and harmless when redundant.
+    ShowWindow(panel_hwnd_, SW_SHOW);
     InvalidateRect(panel_hwnd_, NULL, TRUE);
+    UpdateWindow(panel_hwnd_);
+    LogLine("Showing: InvalidateRect + UpdateWindow done");
   }
   return S_OK;
 }
@@ -283,16 +301,55 @@ void RimeInputMethod::SendCommitText(const char* utf8) {
 
 LRESULT CALLBACK RimeInputMethod::PanelWndProc(HWND hwnd, UINT msg,
                                                WPARAM wp, LPARAM lp) {
+  // Log a hand-picked subset of messages relevant to visibility /
+  // painting. We can't log every WM_* (would flood the log with mouse
+  // moves, timers, etc.) but the ones below tell us whether the SIP
+  // framework is actually trying to paint or show our window.
+  switch (msg) {
+    case WM_PAINT:        LogLine("PanelWndProc: WM_PAINT");        break;
+    case WM_ERASEBKGND:   LogLine("PanelWndProc: WM_ERASEBKGND");   break;
+    case WM_SHOWWINDOW:   LogLineInt("PanelWndProc: WM_SHOWWINDOW wp=", static_cast<int>(wp)); break;
+    case WM_SIZE:         LogLineInt("PanelWndProc: WM_SIZE w=", LOWORD(lp)); break;
+    case WM_WINDOWPOSCHANGED: LogLine("PanelWndProc: WM_WINDOWPOSCHANGED"); break;
+  }
+
   RimeInputMethod* self = LookupPanel(hwnd);
-  if (!self) return DefWindowProcW(hwnd, msg, wp, lp);
+  if (!self) {
+    // The HWND isn't one of ours. This happens normally on the unsubclass
+    // path; log only the message types we'd care about being missed.
+    if (msg == WM_PAINT) LogLine("PanelWndProc: WM_PAINT but self==NULL (post-Deselect?)");
+    return DefWindowProcW(hwnd, msg, wp, lp);
+  }
 
   switch (msg) {
     case WM_PAINT: {
       PAINTSTRUCT ps;
       HDC hdc = BeginPaint(hwnd, &ps);
       if (hdc) {
+        // Diagnostic: paint a bright magenta border first, so we can
+        // see at a glance whether our paint code reaches the screen.
+        // If WMRime shows a magenta-bordered panel, the paint chain is
+        // alive but PaintPanel itself is wrong; if no magenta appears,
+        // our WM_PAINT is being suppressed or overridden somewhere.
+        // (WinCE has no FrameRect; do four thin FillRects manually.)
+        RECT cr;
+        GetClientRect(hwnd, &cr);
+        HBRUSH diag = CreateSolidBrush(RGB(255, 0, 255));
+        RECT top    = { cr.left, cr.top, cr.right, cr.top + 2 };
+        RECT bottom = { cr.left, cr.bottom - 2, cr.right, cr.bottom };
+        RECT left   = { cr.left, cr.top, cr.left + 2, cr.bottom };
+        RECT right  = { cr.right - 2, cr.top, cr.right, cr.bottom };
+        FillRect(hdc, &top, diag);
+        FillRect(hdc, &bottom, diag);
+        FillRect(hdc, &left, diag);
+        FillRect(hdc, &right, diag);
+        DeleteObject(diag);
+
         PaintPanel(hdc, &self->panel_);
         EndPaint(hwnd, &ps);
+        LogLine("PanelWndProc: WM_PAINT painted");
+      } else {
+        LogLine("PanelWndProc: WM_PAINT BeginPaint returned NULL");
       }
       return 0;
     }
