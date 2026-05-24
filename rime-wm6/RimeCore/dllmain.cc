@@ -1237,6 +1237,23 @@ void exercise_rime_api() {
 
 // Anchor that references every exercise_* above so the linker doesn't drop
 // them. Constructed at DLL load time via static-initialiser ordering.
+//
+// IMPORTANT: instantiating this at namespace scope (with a global definition)
+// caused LoadLibrary to fail with ERROR_DLL_INIT_FAILED (1114) on real
+// WM6 hardware. The smoke test does ~40 things at DLL load -- parses YAML
+// configs, compiles regexes, opens registry-backed Service singletons, etc.
+// Any one of them throwing (or hitting an unhandled SEH) on a real device
+// kills DLL load, which then makes WMRimeSIP.dll (which statically imports
+// RimeCore.dll) also fail to load, which makes the SIP picker silently drop
+// us. This was the cause of the "WMRime appears in picker but selecting it
+// reverts to default" symptom we chased for two CABs.
+//
+// Lesson: dev-only code paths must not run during DLL load in production.
+//
+// We keep the struct + exercise_* helpers in source so they can still be
+// instantiated explicitly during a future debug build (e.g. wrap the line
+// below in #ifdef RIMECORE_SMOKE_TEST), but the production DLL does NOT
+// run them at module-attach time.
 struct SmokeTestRunner {
   SmokeTestRunner() {
     exercise_shims();
@@ -1260,7 +1277,9 @@ struct SmokeTestRunner {
     exercise_rime_api();
   }
 };
+#ifdef RIMECORE_SMOKE_TEST
 SmokeTestRunner g_smoke_runner;
+#endif
 
 }  // namespace
 
