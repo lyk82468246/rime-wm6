@@ -59,13 +59,45 @@ RimeInputMethod* LookupPanel(HWND h) {
   return p;
 }
 
+// Window class name uses our CLSID to guarantee global uniqueness even
+// if multiple SIPs end up in the same hosting process. The official
+// Dvorak sample does the same trick.
+const wchar_t* kWindowClassName = L"WMRime.7B9F6D8E-4A2C-4F1E-9D6B-3E5A8C2D1F47";
+bool g_class_registered = false;
+CRITICAL_SECTION g_class_cs;
+bool g_class_cs_ready = false;
+
+void EnsureClassRegistered() {
+  if (g_class_registered) return;
+  if (!g_class_cs_ready) {
+    InitializeCriticalSection(&g_class_cs);
+    g_class_cs_ready = true;
+  }
+  EnterCriticalSection(&g_class_cs);
+  if (!g_class_registered) {
+    WNDCLASSW wc;
+    ZeroMemory(&wc, sizeof(wc));
+    wc.lpfnWndProc   = RimeInputMethod::PanelWndProc;
+    wc.hInstance     = GetSipModule();
+    wc.hbrBackground = NULL;   // we paint background ourselves in WM_PAINT
+    wc.lpszClassName = kWindowClassName;
+    ATOM atom = RegisterClassW(&wc);
+    if (atom) {
+      g_class_registered = true;
+      LogLineHex("EnsureClassRegistered: RegisterClass atom=", static_cast<unsigned int>(atom));
+    } else {
+      LogLineHex("EnsureClassRegistered: RegisterClass FAILED err=", GetLastError());
+    }
+  }
+  LeaveCriticalSection(&g_class_cs);
+}
+
 }  // namespace
 
 RimeInputMethod::RimeInputMethod()
     : ref_count_(1),
       panel_hwnd_(NULL),
       child_hwnd_(NULL),
-      orig_wndproc_(NULL),
       callback_(NULL),
       visible_(false) {
   InterlockedIncrement(&g_object_count);
@@ -125,46 +157,47 @@ STDMETHODIMP RimeInputMethod::Select(HWND hwndSip) {
     return E_INVALIDARG;
   }
   EnsureRimeInitialized();
+  EnsureClassRegistered();
 
   panel_hwnd_ = hwndSip;
   panel_.session = RimeCreateSession();
   LogLineInt("Select: RimeCreateSession returned id=", static_cast<int>(panel_.session));
 
-  RECT rc;
-  GetClientRect(panel_hwnd_, &rc);
-  int w = rc.right - rc.left;
-  int h = rc.bottom - rc.top;
-  LogLineInt("Select: parent client w=", w);
-  LogLineInt("Select: parent client h=", h);
-
-  // Create our own child window inside the SIP frame and subclass IT.
-  // The SIP framework gives us a parent container in `hwndSip`; per the
-  // standard WinCE/PocketPC SIP pattern (see codeproject.com/Articles/2828
-  // and MS PocketPC SDK MyKB sample) the IM is expected to create a
-  // WS_CHILD | WS_VISIBLE descendant for actual drawing. Subclassing the
-  // parent directly does not intercept WM_PAINT because the parent is a
-  // bare container the framework never paints into -- previous diag run
-  // confirmed parent IsWindowVisible=0 and zero WM_PAINT messages.
-  //
-  // Using the predefined "STATIC" window class avoids having to register
-  // our own. WS_CLIPSIBLINGS keeps a tidy z-order; WS_EX_NOACTIVATE (if
-  // available; harmless on WinCE if ignored) keeps focus on the host app.
-  child_hwnd_ = CreateWindowExW(0, L"STATIC", L"",
-                                WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS,
-                                0, 0, w, h,
-                                panel_hwnd_, NULL, NULL, NULL);
+  // Mirror the Microsoft Dvorak SIP sample (Windows Mobile 6 SDK,
+  // Samples\PocketPC\CPP\ATL\dvoraksip\dvorak_implementation.cpp):
+  //   - Use OUR registered window class (lpfnWndProc = PanelWndProc)
+  //     instead of subclassing a predefined "STATIC" control. The
+  //     framework appears to expect a custom-class child here; with
+  //     a subclassed STATIC, our WM_PAINT was reaching us but the
+  //     framework still suppressed the rendered output (no visible
+  //     pixels even after BeginPaint/EndPaint succeeded).
+  //   - CreateWindow with WS_CHILD ONLY (no WS_VISIBLE at create
+  //     time). Dvorak uses initial 10x10; ReceiveSipInfo will resize
+  //     it momentarily.
+  //   - Then ShowWindow(SW_SHOWNOACTIVATE) -- shows the window
+  //     without stealing focus or activation from the host app, which
+  //     is what the SIP framework expects.
+  child_hwnd_ = CreateWindowW(kWindowClassName, L"",
+                              WS_CHILD,
+                              0, 0, 10, 10,
+                              panel_hwnd_, NULL, GetSipModule(), NULL);
   if (!child_hwnd_) {
-    LogLineHex("Select: CreateWindowEx FAILED err=", GetLastError());
+    LogLineHex("Select: CreateWindow FAILED err=", GetLastError());
     return E_FAIL;
   }
   LogLinePtr("Select: created child_hwnd_=", child_hwnd_);
 
-  orig_wndproc_ = reinterpret_cast<WNDPROC>(
-      SetWindowLongW(child_hwnd_, GWL_WNDPROC,
-                     reinterpret_cast<LONG>(&RimeInputMethod::PanelWndProc)));
   RegisterPanel(child_hwnd_, this);
-  LogLinePtr("Select: subclassed child, orig_wndproc_=", orig_wndproc_);
+  ShowWindow(child_hwnd_, SW_SHOWNOACTIVATE);
+  LogLine("Select: ShowWindow(SW_SHOWNOACTIVATE) done");
 
+  // Layout uses a sensible default; ReceiveSipInfo will refine it.
+  RECT rc;
+  GetClientRect(panel_hwnd_, &rc);
+  int w = rc.right - rc.left;
+  int h = rc.bottom - rc.top;
+  if (w <= 0) w = 240;
+  if (h <= 0) h = 80;
   RecomputeLayout(&panel_, w, h);
   LogLine("Select returning S_OK");
   return S_OK;
@@ -173,11 +206,9 @@ STDMETHODIMP RimeInputMethod::Select(HWND hwndSip) {
 STDMETHODIMP RimeInputMethod::Deselect() {
   LogLine("Deselect entered");
   if (child_hwnd_) {
-    // DestroyWindow also implicitly unregisters our subclass.
     UnregisterPanel(child_hwnd_);
     DestroyWindow(child_hwnd_);
     child_hwnd_ = NULL;
-    orig_wndproc_ = NULL;
   }
   if (panel_.session) {
     RimeDestroySession(panel_.session);
@@ -189,20 +220,11 @@ STDMETHODIMP RimeInputMethod::Deselect() {
 }
 
 STDMETHODIMP RimeInputMethod::Showing() {
+  // Dvorak SIP sample returns NOERROR with no work here. The framework
+  // manages our parent's visibility; our child inherits visibility from
+  // the parent. Painting fires naturally via WM_PAINT.
   LogLine("Showing entered");
   visible_ = true;
-  if (child_hwnd_) {
-    LONG style = GetWindowLongW(child_hwnd_, GWL_STYLE);
-    LogLineHex("Showing: child GWL_STYLE=", static_cast<unsigned int>(style));
-    LogLineInt("Showing: child IsWindowVisible=", IsWindowVisible(child_hwnd_) ? 1 : 0);
-    RefreshFromRime(&panel_);
-    ShowWindow(child_hwnd_, SW_SHOW);
-    InvalidateRect(child_hwnd_, NULL, TRUE);
-    UpdateWindow(child_hwnd_);
-    LogLine("Showing: ShowWindow + Invalidate + Update done");
-  } else {
-    LogLine("Showing: child_hwnd_ is NULL!");
-  }
   return S_OK;
 }
 
@@ -224,20 +246,14 @@ STDMETHODIMP RimeInputMethod::GetInfo(IMINFO* pimi) {
   pimi->hImageWide = NULL;
   pimi->iNarrow = 0;
   pimi->iWide = 0;
-  // Per MSDN IMINFO docs, fdwFlags here describes the SIP's current
-  // characteristics. We set 0 (not SIPF_ON or SIPF_DOCKED -- those are
-  // status flags managed by the framework, not advertised by GetInfo
-  // before Select). The framework will tell us the docked rect via
-  // ReceiveSipInfo right after Select.
-  pimi->fdwFlags = 0;
-  // Default rect: full SIP rect that the framework usually overrides
-  // immediately. Set bottom-anchored values so even if ReceiveSipInfo
-  // never fires we get a usable panel.
+  // Dvorak sample sets SIPF_DOCKED here. With fdwFlags=0 the framework
+  // was treating our SIP as not-yet-dockable and never positioned the
+  // panel onto the screen properly, even though Showing() fired.
+  pimi->fdwFlags = SIPF_DOCKED;
   pimi->rcSipRect.left = 0;
   pimi->rcSipRect.top = 0;
   pimi->rcSipRect.right = 240;
   pimi->rcSipRect.bottom = 80;
-  LogLine("GetInfo returning S_OK");
   return S_OK;
 }
 
@@ -248,14 +264,14 @@ STDMETHODIMP RimeInputMethod::ReceiveSipInfo(SIPINFO* psi) {
   int h = psi->rcSipRect.bottom - psi->rcSipRect.top;
   LogLineInt("ReceiveSipInfo: w=", w);
   LogLineInt("ReceiveSipInfo: h=", h);
-  if (w > 0 && h > 0) {
+  if (w > 0 && h > 0 && child_hwnd_) {
+    // Mirror Dvorak: MoveWindow(child, 0, 0, w, h, FALSE). Position
+    // is parent-relative so always (0, 0); the framework controls
+    // where the parent itself sits on screen.
+    MoveWindow(child_hwnd_, 0, 0, w, h, FALSE);
     RecomputeLayout(&panel_, w, h);
-    if (child_hwnd_) {
-      // Resize our child to match the new SIP rect.
-      MoveWindow(child_hwnd_, 0, 0, w, h, TRUE);
-    }
+    InvalidateRect(child_hwnd_, NULL, TRUE);
   }
-  if (child_hwnd_) InvalidateRect(child_hwnd_, NULL, TRUE);
   return S_OK;
 }
 
@@ -335,13 +351,15 @@ LRESULT CALLBACK RimeInputMethod::PanelWndProc(HWND hwnd, UINT msg,
     case WM_SHOWWINDOW:   LogLineInt("PanelWndProc: WM_SHOWWINDOW wp=", static_cast<int>(wp)); break;
     case WM_SIZE:         LogLineInt("PanelWndProc: WM_SIZE w=", LOWORD(lp)); break;
     case WM_WINDOWPOSCHANGED: LogLine("PanelWndProc: WM_WINDOWPOSCHANGED"); break;
+    case WM_CREATE:       LogLine("PanelWndProc: WM_CREATE");       break;
+    case WM_DESTROY:      LogLine("PanelWndProc: WM_DESTROY");      break;
   }
 
   RimeInputMethod* self = LookupPanel(hwnd);
   if (!self) {
-    // The HWND isn't one of ours. This happens normally on the unsubclass
-    // path; log only the message types we'd care about being missed.
-    if (msg == WM_PAINT) LogLine("PanelWndProc: WM_PAINT but self==NULL (post-Deselect?)");
+    // No registered instance yet (WM_CREATE / pre-RegisterPanel) or
+    // already torn down (post-Deselect). Just defer to the default
+    // class wndproc.
     return DefWindowProcW(hwnd, msg, wp, lp);
   }
 
@@ -352,10 +370,6 @@ LRESULT CALLBACK RimeInputMethod::PanelWndProc(HWND hwnd, UINT msg,
       if (hdc) {
         // Diagnostic: paint a bright magenta border first, so we can
         // see at a glance whether our paint code reaches the screen.
-        // If WMRime shows a magenta-bordered panel, the paint chain is
-        // alive but PaintPanel itself is wrong; if no magenta appears,
-        // our WM_PAINT is being suppressed or overridden somewhere.
-        // (WinCE has no FrameRect; do four thin FillRects manually.)
         RECT cr;
         GetClientRect(hwnd, &cr);
         HBRUSH diag = CreateSolidBrush(RGB(255, 0, 255));
@@ -402,7 +416,9 @@ LRESULT CALLBACK RimeInputMethod::PanelWndProc(HWND hwnd, UINT msg,
     case WM_ERASEBKGND:
       return 1;  // we paint full background in WM_PAINT
   }
-  return CallWindowProcW(self->orig_wndproc_, hwnd, msg, wp, lp);
+  // No subclass chain in this design (we registered our own class).
+  // Defer everything else to the default window procedure.
+  return DefWindowProcW(hwnd, msg, wp, lp);
 }
 
 }  // namespace wmrime
