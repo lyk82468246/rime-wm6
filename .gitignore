@@ -36,6 +36,7 @@ WMRime.dsm
 /dist/*.dll
 /dist/*.bin
 /dist/*.err
+/dist/*.exe
 
 # Python
 __pycache__/

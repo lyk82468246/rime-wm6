@@ -17,7 +17,7 @@ VersionMin    = 5.0
 VersionMax    = 7.99
 
 [DefaultInstall]
-CopyFiles  = Files.Sip, Files.Engine, Files.Data
+CopyFiles  = Files.Sip, Files.Engine, Files.Probe, Files.Data
 AddReg     = Reg.WMRime, Reg.Clsid, Reg.Inproc, Reg.IsSIP, Reg.Icon
 CESetupDLL = ""
 
@@ -27,6 +27,7 @@ CESetupDLL = ""
 [SourceDisksFiles]
 RimeCore.dll               = 1
 WMRimeSIP.dll              = 1
+WMRimeProbe.exe            = 1
 luna_pinyin.prism.bin      = 1
 luna_pinyin.table.bin      = 1
 
@@ -37,10 +38,14 @@ luna_pinyin.table.bin      = 1
 ;                does NOT include the importing DLL's own folder.
 ;                Putting RimeCore alongside WMRimeSIP.dll makes
 ;                the SIP fail to load (silent in the picker).
+; WMRimeProbe.exe: app dir; tap-to-run diagnostic. Reports the
+;                Win32 error code from LoadLibrary on WMRimeSIP.dll,
+;                bypassing the SIP framework entirely.
 ; *.bin:         data subdir, pointed at by HKLM\Software\WMRime\
 ;                SharedDataDir.
 Files.Sip       = 0, %InstallDir%
 Files.Engine    = 0, %CE2%
+Files.Probe     = 0, %InstallDir%
 Files.Data      = 0, %InstallDir%\data
 
 [Files.Sip]
@@ -48,6 +53,9 @@ WMRimeSIP.dll
 
 [Files.Engine]
 RimeCore.dll
+
+[Files.Probe]
+WMRimeProbe.exe
 
 [Files.Data]
 luna_pinyin.prism.bin

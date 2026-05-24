@@ -10,18 +10,54 @@ namespace wmrime {
 
 namespace {
 
-const wchar_t* kLogPath = L"\\Program Files\\WMRime\\wmrime.log";
+// Try these paths in order. Whichever first CreateFile succeeds wins
+// and is cached for the rest of the process lifetime.
+//   * \Temp\ -- writable by virtually every WM6 code path
+//   * \Windows\ -- we know this is writable since the CAB drops
+//                  RimeCore.dll here; useful belt-and-braces
+//   * %InstallDir% -- co-located with the install when possible
+//   * \Storage Card\ -- last resort if user installed there
+//   * \ (root) -- some carrier-locked devices map the user volume
+//                  here and reject every other root-like path
+const wchar_t* kLogPaths[] = {
+  L"\\Temp\\wmrime.log",
+  L"\\Windows\\wmrime.log",
+  L"\\Program Files\\WMRime\\wmrime.log",
+  L"\\Storage Card\\wmrime.log",
+  L"\\wmrime.log",
+};
+const int kLogPathCount = sizeof(kLogPaths) / sizeof(kLogPaths[0]);
 
-// All paths here use the Win32 API directly (no CRT) so we have a
-// reliable channel even before the CRT is fully initialized.
-void WriteRaw(const char* bytes, DWORD len) {
-  HANDLE h = CreateFileW(kLogPath, GENERIC_WRITE, FILE_SHARE_READ,
+// Cached path index that worked last time. -1 = haven't tried; -2 =
+// all failed (don't bother retrying).
+int g_chosen_path = -1;
+
+// Try a single path. Returns true if write succeeded.
+bool TryWritePath(const wchar_t* path, const char* bytes, DWORD len) {
+  HANDLE h = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ,
                          NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-  if (h == INVALID_HANDLE_VALUE) return;
+  if (h == INVALID_HANDLE_VALUE) return false;
   SetFilePointer(h, 0, NULL, FILE_END);
   DWORD written = 0;
-  WriteFile(h, bytes, len, &written, NULL);
+  BOOL ok = WriteFile(h, bytes, len, &written, NULL);
   CloseHandle(h);
+  return ok != 0;
+}
+
+void WriteRaw(const char* bytes, DWORD len) {
+  // Fast path: re-use the path that worked last time.
+  if (g_chosen_path >= 0 && g_chosen_path < kLogPathCount) {
+    if (TryWritePath(kLogPaths[g_chosen_path], bytes, len)) return;
+    // The previously-working path failed; fall through and rescan.
+  }
+  if (g_chosen_path == -2) return;  // all paths previously failed
+  for (int i = 0; i < kLogPathCount; ++i) {
+    if (TryWritePath(kLogPaths[i], bytes, len)) {
+      g_chosen_path = i;
+      return;
+    }
+  }
+  g_chosen_path = -2;
 }
 
 void FormatPrefix(char* buf, size_t buflen) {

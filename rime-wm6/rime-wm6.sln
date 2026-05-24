@@ -8,6 +8,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "WMRimeSIP", "WMRimeSIP\WMRi
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "RimeCore", "RimeCore\RimeCore.vcproj", "{3BF0C477-EECC-4AC5-890C-33585F1F8DE1}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "WMRimeProbe", "WMRimeProbe\WMRimeProbe.vcproj", "{A3B5D2C9-1F4E-4D7A-8B6C-9E5F2A8C1D34}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Windows Mobile 6 Professional SDK (ARMV4I) = Debug|Windows Mobile 6 Professional SDK (ARMV4I)
@@ -26,6 +28,9 @@ Global
 		{3BF0C477-EECC-4AC5-890C-33585F1F8DE1}.Release|Windows Mobile 6 Professional SDK (ARMV4I).ActiveCfg = Release|Windows Mobile 6 Professional SDK (ARMV4I)
 		{3BF0C477-EECC-4AC5-890C-33585F1F8DE1}.Release|Windows Mobile 6 Professional SDK (ARMV4I).Build.0 = Release|Windows Mobile 6 Professional SDK (ARMV4I)
 		{3BF0C477-EECC-4AC5-890C-33585F1F8DE1}.Release|Windows Mobile 6 Professional SDK (ARMV4I).Deploy.0 = Release|Windows Mobile 6 Professional SDK (ARMV4I)
+		{A3B5D2C9-1F4E-4D7A-8B6C-9E5F2A8C1D34}.Release|Windows Mobile 6 Professional SDK (ARMV4I).ActiveCfg = Release|Windows Mobile 6 Professional SDK (ARMV4I)
+		{A3B5D2C9-1F4E-4D7A-8B6C-9E5F2A8C1D34}.Release|Windows Mobile 6 Professional SDK (ARMV4I).Build.0 = Release|Windows Mobile 6 Professional SDK (ARMV4I)
+		{A3B5D2C9-1F4E-4D7A-8B6C-9E5F2A8C1D34}.Release|Windows Mobile 6 Professional SDK (ARMV4I).Deploy.0 = Release|Windows Mobile 6 Professional SDK (ARMV4I)
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

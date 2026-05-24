@@ -21,6 +21,7 @@ rem Build output dirs contain parens, so always quote when expanding.
 set "OUTDIR=Windows Mobile 6 Professional SDK (ARMV4I)\Release"
 set "RIMECORE_DLL=%ROOT%rime-wm6\RimeCore\%OUTDIR%\RimeCore.dll"
 set "WMRIMESIP_DLL=%ROOT%rime-wm6\WMRimeSIP\%OUTDIR%\WMRimeSIP.dll"
+set "PROBE_EXE=%ROOT%rime-wm6\WMRimeProbe\%OUTDIR%\WMRimeProbe.exe"
 set "PRISM_BIN=%ROOT%data\luna_pinyin.prism.bin"
 set "TABLE_BIN=%ROOT%data\luna_pinyin.table.bin"
 set "DIST=%ROOT%dist"
@@ -41,6 +42,7 @@ echo.
 echo === [2/4] Verifying build outputs ===
 if not exist "!RIMECORE_DLL!" goto :missing_rimecore
 if not exist "!WMRIMESIP_DLL!" goto :missing_sip
+if not exist "!PROBE_EXE!" goto :missing_probe
 if not exist "!PRISM_BIN!" goto :missing_prism
 if not exist "!TABLE_BIN!" goto :missing_table
 
@@ -49,6 +51,7 @@ echo === [3/4] Assembling dist\ ===
 if not exist "!DIST!" mkdir "!DIST!"
 copy /Y "!RIMECORE_DLL!"  "!DIST!\RimeCore.dll"           >nul || exit /b 1
 copy /Y "!WMRIMESIP_DLL!" "!DIST!\WMRimeSIP.dll"          >nul || exit /b 1
+copy /Y "!PROBE_EXE!"     "!DIST!\WMRimeProbe.exe"        >nul || exit /b 1
 copy /Y "!PRISM_BIN!"     "!DIST!\luna_pinyin.prism.bin"  >nul || exit /b 1
 copy /Y "!TABLE_BIN!"     "!DIST!\luna_pinyin.table.bin"  >nul || exit /b 1
 
@@ -77,6 +80,9 @@ echo MISSING: RimeCore.dll under rime-wm6\RimeCore\Release.
 exit /b 1
 :missing_sip
 echo MISSING: WMRimeSIP.dll under rime-wm6\WMRimeSIP\Release.
+exit /b 1
+:missing_probe
+echo MISSING: WMRimeProbe.exe under rime-wm6\WMRimeProbe\Release.
 exit /b 1
 :missing_prism
 echo MISSING: data\luna_pinyin.prism.bin -- run tools\build_dict.py first.
