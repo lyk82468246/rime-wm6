@@ -228,6 +228,10 @@
 				RelativePath="..\..\src\wmrime_sip\utf_conv.cc"
 				>
 			</File>
+			<File
+				RelativePath="..\..\src\wmrime_sip\log.cc"
+				>
+			</File>
 		</Filter>
 		<Filter
 			Name="ͷ�ļ�"
@@ -256,6 +260,10 @@
 			</File>
 			<File
 				RelativePath="..\..\src\wmrime_sip\utf_conv.h"
+				>
+			</File>
+			<File
+				RelativePath="..\..\src\wmrime_sip\log.h"
 				>
 			</File>
 		</Filter>

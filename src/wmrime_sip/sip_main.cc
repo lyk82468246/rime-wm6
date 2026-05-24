@@ -34,6 +34,7 @@
 
 #include "class_factory.h"
 #include "clsids.h"
+#include "log.h"
 
 namespace wmrime {
 
@@ -91,8 +92,10 @@ class SipBootstrapper {
  public:
   SipBootstrapper() {
     EnsureInitCs();
+    LogLine("=== WMRimeSIP DLL load (SipBootstrapper ctor) ===");
   }
   ~SipBootstrapper() {
+    LogLine("=== WMRimeSIP DLL unload (SipBootstrapper dtor) ===");
     if (g_rime_initialized) {
       RimeFinalize();
       g_rime_initialized = false;
@@ -115,7 +118,9 @@ void EnsureRimeInitialized() {
   EnsureInitCs();
   EnterCriticalSection(&g_init_cs);
   if (!g_rime_initialized) {
+    LogLine("EnsureRimeInitialized: starting");
     std::wstring shared = ReadSharedDataDir();
+    LogLineW("EnsureRimeInitialized: shared_data_dir = ", shared.c_str());
     // Convert to UTF-8 narrow for rime_api.
     int n = WideCharToMultiByte(CP_UTF8, 0, shared.c_str(), -1,
                                 NULL, 0, NULL, NULL);
@@ -132,7 +137,9 @@ void EnsureRimeInitialized() {
     traits.shared_data_dir = holder.shared.c_str();
     traits.user_data_dir = NULL;
     traits.app_name = holder.app.c_str();
+    LogLine("EnsureRimeInitialized: calling RimeInitialize");
     RimeInitialize(&traits);
+    LogLine("EnsureRimeInitialized: RimeInitialize returned");
     g_rime_initialized = true;
   }
   LeaveCriticalSection(&g_init_cs);
@@ -149,13 +156,21 @@ void EnsureRimeInitialized() {
 
 extern "C" HRESULT STDAPICALLTYPE
 DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID* ppv) {
+  wmrime::LogLine("DllGetClassObject entered");
   if (!ppv) return E_POINTER;
   *ppv = NULL;
-  if (!IsEqualCLSID(rclsid, CLSID_WMRimeSIP)) return CLASS_E_CLASSNOTAVAILABLE;
+  if (!IsEqualCLSID(rclsid, CLSID_WMRimeSIP)) {
+    wmrime::LogLine("DllGetClassObject: rclsid != CLSID_WMRimeSIP, returning CLASS_E_CLASSNOTAVAILABLE");
+    return CLASS_E_CLASSNOTAVAILABLE;
+  }
   wmrime::RimeClassFactory* factory = new (std::nothrow) wmrime::RimeClassFactory();
-  if (!factory) return E_OUTOFMEMORY;
+  if (!factory) {
+    wmrime::LogLine("DllGetClassObject: OOM allocating ClassFactory");
+    return E_OUTOFMEMORY;
+  }
   HRESULT hr = factory->QueryInterface(riid, ppv);
   factory->Release();
+  wmrime::LogLineHex("DllGetClassObject returning hr=", static_cast<unsigned int>(hr));
   return hr;
 }
 

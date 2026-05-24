@@ -10,6 +10,7 @@
 #include "sip_globals.h"
 #include "sip_window.h"
 #include "utf_conv.h"
+#include "log.h"
 
 #include <rime_api.h>
 
@@ -69,9 +70,11 @@ RimeInputMethod::RimeInputMethod()
   InterlockedIncrement(&g_object_count);
   ZeroMemory(&panel_, sizeof(panel_));
   panel_.session = 0;
+  LogLine("RimeInputMethod: ctor");
 }
 
 RimeInputMethod::~RimeInputMethod() {
+  LogLine("RimeInputMethod: dtor");
   if (callback_) callback_->Release();
   if (panel_.session) {
     RimeDestroySession(panel_.session);
@@ -87,13 +90,16 @@ STDMETHODIMP RimeInputMethod::QueryInterface(REFIID riid, void** ppv) {
       IsEqualIID(riid, IID_IInputMethod)) {
     *ppv = static_cast<IInputMethod*>(this);
     AddRef();
+    LogLine("RimeInputMethod::QI -> IInputMethod");
     return S_OK;
   }
   if (IsEqualIID(riid, IID_IInputMethod2)) {
     *ppv = static_cast<IInputMethod2*>(this);
     AddRef();
+    LogLine("RimeInputMethod::QI -> IInputMethod2");
     return S_OK;
   }
+  LogLine("RimeInputMethod::QI -> E_NOINTERFACE");
   return E_NOINTERFACE;
 }
 
@@ -112,23 +118,33 @@ STDMETHODIMP_(ULONG) RimeInputMethod::Release() {
 // ----------------------------------------------------------------------
 
 STDMETHODIMP RimeInputMethod::Select(HWND hwndSip) {
-  if (!hwndSip) return E_INVALIDARG;
+  LogLinePtr("Select entered, hwndSip=", hwndSip);
+  if (!hwndSip) {
+    LogLine("Select: NULL hwndSip, returning E_INVALIDARG");
+    return E_INVALIDARG;
+  }
   EnsureRimeInitialized();
 
   panel_hwnd_ = hwndSip;
   panel_.session = RimeCreateSession();
+  LogLineInt("Select: RimeCreateSession returned id=", static_cast<int>(panel_.session));
   RegisterPanel(panel_hwnd_, this);
   orig_wndproc_ = reinterpret_cast<WNDPROC>(
       SetWindowLongW(panel_hwnd_, GWL_WNDPROC,
                      reinterpret_cast<LONG>(&RimeInputMethod::PanelWndProc)));
+  LogLinePtr("Select: SetWindowLong replaced orig_wndproc_=", orig_wndproc_);
 
   RECT rc;
   GetClientRect(panel_hwnd_, &rc);
+  LogLineInt("Select: client width=", rc.right - rc.left);
+  LogLineInt("Select: client height=", rc.bottom - rc.top);
   RecomputeLayout(&panel_, rc.right - rc.left, rc.bottom - rc.top);
+  LogLine("Select returning S_OK");
   return S_OK;
 }
 
 STDMETHODIMP RimeInputMethod::Deselect() {
+  LogLine("Deselect entered");
   if (panel_hwnd_ && orig_wndproc_) {
     SetWindowLongW(panel_hwnd_, GWL_WNDPROC,
                    reinterpret_cast<LONG>(orig_wndproc_));
@@ -145,6 +161,7 @@ STDMETHODIMP RimeInputMethod::Deselect() {
 }
 
 STDMETHODIMP RimeInputMethod::Showing() {
+  LogLine("Showing entered");
   visible_ = true;
   if (panel_hwnd_) {
     RefreshFromRime(&panel_);
@@ -154,6 +171,7 @@ STDMETHODIMP RimeInputMethod::Showing() {
 }
 
 STDMETHODIMP RimeInputMethod::Hiding() {
+  LogLine("Hiding entered");
   visible_ = false;
   // Push any pending commit before vanishing.
   std::string drained = DrainCommit(panel_.session);
@@ -162,6 +180,7 @@ STDMETHODIMP RimeInputMethod::Hiding() {
 }
 
 STDMETHODIMP RimeInputMethod::GetInfo(IMINFO* pimi) {
+  LogLine("GetInfo entered");
   if (!pimi) return E_POINTER;
   ZeroMemory(pimi, sizeof(*pimi));
   pimi->cbSize = sizeof(*pimi);
@@ -169,28 +188,37 @@ STDMETHODIMP RimeInputMethod::GetInfo(IMINFO* pimi) {
   pimi->hImageWide = NULL;
   pimi->iNarrow = 0;
   pimi->iWide = 0;
-  // Standard SIP flags + bumping its sizing so the shell knows we
-  // want a docked panel.
-  pimi->fdwFlags = SIPF_ON | SIPF_DOCKED;
-  // Default rect: docked at bottom. SIP framework sends ReceiveSipInfo
-  // shortly after with the real geometry.
+  // Per MSDN IMINFO docs, fdwFlags here describes the SIP's current
+  // characteristics. We set 0 (not SIPF_ON or SIPF_DOCKED -- those are
+  // status flags managed by the framework, not advertised by GetInfo
+  // before Select). The framework will tell us the docked rect via
+  // ReceiveSipInfo right after Select.
+  pimi->fdwFlags = 0;
+  // Default rect: full SIP rect that the framework usually overrides
+  // immediately. Set bottom-anchored values so even if ReceiveSipInfo
+  // never fires we get a usable panel.
   pimi->rcSipRect.left = 0;
   pimi->rcSipRect.top = 0;
   pimi->rcSipRect.right = 240;
-  pimi->rcSipRect.bottom = 200;
+  pimi->rcSipRect.bottom = 80;
+  LogLine("GetInfo returning S_OK");
   return S_OK;
 }
 
 STDMETHODIMP RimeInputMethod::ReceiveSipInfo(SIPINFO* psi) {
+  LogLine("ReceiveSipInfo entered");
   if (!psi) return E_POINTER;
   int w = psi->rcSipRect.right - psi->rcSipRect.left;
   int h = psi->rcSipRect.bottom - psi->rcSipRect.top;
+  LogLineInt("ReceiveSipInfo: w=", w);
+  LogLineInt("ReceiveSipInfo: h=", h);
   if (w > 0 && h > 0) RecomputeLayout(&panel_, w, h);
   if (panel_hwnd_) InvalidateRect(panel_hwnd_, NULL, TRUE);
   return S_OK;
 }
 
 STDMETHODIMP RimeInputMethod::RegisterCallback(IIMCallback* callback) {
+  LogLinePtr("RegisterCallback entered, callback=", callback);
   if (callback_) { callback_->Release(); callback_ = NULL; }
   if (callback) {
     callback_ = callback;
