@@ -53,10 +53,10 @@ VersionMin    = 5.0                ; WinCE 5.0+, covers WM6.x
 VersionMax    = 7.99
 
 [DefaultInstall]
-CopyFiles  = Files.Bin, Files.Data
+CopyFiles  = Files.Sip, Files.Engine, Files.Data
 AddReg     = Reg.WMRime, Reg.SIP, Reg.CLSID, Reg.InprocServer
 
-CESetupDLL = ""                    ; 如果想要自定义安装回调，写个 setup.dll 放这里
+CESetupDLL = ""
 
 [SourceDisksNames]
 1 = , "Common files",, .
@@ -68,14 +68,24 @@ luna_pinyin.prism.bin      = 1
 luna_pinyin.table.bin      = 1
 
 ; ---------- DestinationDirs ----------
+; %CE1% = \Program Files, %CE2% = \Windows.
+; CRITICAL: the engine DLL must go in \Windows\ because WinCE's
+; dependent-DLL search path is {loading process cwd, \Windows} --
+; NOT the directory of the importing DLL. Putting RimeCore.dll in
+; \Program Files\WMRime\ next to WMRimeSIP.dll looks natural but
+; makes WMRimeSIP.dll fail to load (silent), and the SIP picker
+; will then drop our entry without any visible error.
 [DestinationDirs]
-Files.Bin       = 0, %InstallDir%
+Files.Sip       = 0, %InstallDir%       ; \Program Files\WMRime\
+Files.Engine    = 0, %CE2%              ; \Windows\
 Files.Data      = 0, %InstallDir%\data
 
 ; ---------- File copy groups ----------
-[Files.Bin]
-RimeCore.dll
+[Files.Sip]
 WMRimeSIP.dll
+
+[Files.Engine]
+RimeCore.dll
 
 [Files.Data]
 luna_pinyin.prism.bin

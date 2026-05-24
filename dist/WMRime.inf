@@ -17,7 +17,7 @@ VersionMin    = 5.0
 VersionMax    = 7.99
 
 [DefaultInstall]
-CopyFiles  = Files.Bin, Files.Data
+CopyFiles  = Files.Sip, Files.Engine, Files.Data
 AddReg     = Reg.WMRime, Reg.SIP, Reg.CLSID, Reg.InprocServer
 CESetupDLL = ""
 
@@ -31,12 +31,25 @@ luna_pinyin.prism.bin      = 1
 luna_pinyin.table.bin      = 1
 
 [DestinationDirs]
-Files.Bin       = 0, %InstallDir%
+; WMRimeSIP.dll: in the app dir so it's discoverable as a "package"
+;                file (Settings > Remove Programs lists it correctly).
+; RimeCore.dll:  in \Windows so the WinCE loader can resolve it as a
+;                dependency. On WinCE the dependent-DLL search path is
+;                {loading_process_cwd, \Windows} -- NOT the directory
+;                of the importing DLL. With RimeCore in the app dir,
+;                WMRimeSIP.dll fails to load and the SIP picker
+;                silently drops us.
+; *.bin:         data subdir, pointed at by HKLM\Software\WMRime\
+;                SharedDataDir.
+Files.Sip       = 0, %InstallDir%
+Files.Engine    = 0, %CE2%
 Files.Data      = 0, %InstallDir%\data
 
-[Files.Bin]
-RimeCore.dll
+[Files.Sip]
 WMRimeSIP.dll
+
+[Files.Engine]
+RimeCore.dll
 
 [Files.Data]
 luna_pinyin.prism.bin
