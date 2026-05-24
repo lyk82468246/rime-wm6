@@ -93,6 +93,11 @@ class SipBootstrapper {
   SipBootstrapper() {
     EnsureInitCs();
     LogLine("=== WMRimeSIP DLL load (SipBootstrapper ctor) ===");
+    // Stamp the build identity into the log so we can verify, by
+    // inspecting the log itself, that the device is running the DLL
+    // we think it is (not a stale cached copy from a previous CAB).
+    // __DATE__/__TIME__ are baked in at compile time.
+    LogLine("BUILD: " __DATE__ " " __TIME__ " feature=paint-diag-magenta");
   }
   ~SipBootstrapper() {
     LogLine("=== WMRimeSIP DLL unload (SipBootstrapper dtor) ===");
