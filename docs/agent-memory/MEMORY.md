@@ -19,6 +19,6 @@
 - [rime_api MVP shape](project_rime_api_mvp.md) — C export surface uses MiniSession that bypasses Engine; PinyinTranslator loaded once at Initialize, no deployer/schema-list/config-iter exposed
 - [WMRimeSIP MVP shape](project_wmrime_sip_mvp.md) — COM SIP shell in src/wmrime_sip/, soft-keyboard mode, subclasses SIP hwnd's WNDPROC, calls rime_api + IIMCallback::SendString
 - [WinCE COM DLL gotchas](feedback_wince_com_dll.md) — three traps when writing a COM in-proc server on WinCE/MSVC9: use .def file, INITGUID in one TU, no SetPropW
-- [WM6 SIP picker needs DWORD IsSIPInputMethod](feedback_wm6_sip_picker_dword.md) — REG_SZ "1" is silently rejected; SIP won't appear in picker until value is REG_DWORD 1
+- [WM6 SIP registration is HKCR\CLSID\{guid}\IsSIPInputMethod subkey with REG_SZ "1"](feedback_wm6_sip_picker_dword.md) — the Shell\Keybd path I guessed earlier is fictional; skip ThreadingModel too
 - [WinCE DLL search excludes loaded module's dir](feedback_wince_dll_search_path.md) — dependent DLLs are searched in {loading process cwd, \Windows\} only; engine DLL must go in \Windows\, not the app dir
 
