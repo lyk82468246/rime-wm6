@@ -66,8 +66,9 @@ class RimeInputMethod : public IInputMethod2 {
                                        WPARAM wp, LPARAM lp);
 
   LONG ref_count_;
-  HWND panel_hwnd_;
-  WNDPROC orig_wndproc_;
+  HWND panel_hwnd_;        // SIP-frame HWND given by framework (parent)
+  HWND child_hwnd_;        // our own WS_CHILD that we subclass + paint
+  WNDPROC orig_wndproc_;   // child's original wndproc (for chaining)
   IIMCallback* callback_;
   PanelState panel_;
   bool visible_;

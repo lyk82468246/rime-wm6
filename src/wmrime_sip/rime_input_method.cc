@@ -64,6 +64,7 @@ RimeInputMethod* LookupPanel(HWND h) {
 RimeInputMethod::RimeInputMethod()
     : ref_count_(1),
       panel_hwnd_(NULL),
+      child_hwnd_(NULL),
       orig_wndproc_(NULL),
       callback_(NULL),
       visible_(false) {
@@ -128,27 +129,54 @@ STDMETHODIMP RimeInputMethod::Select(HWND hwndSip) {
   panel_hwnd_ = hwndSip;
   panel_.session = RimeCreateSession();
   LogLineInt("Select: RimeCreateSession returned id=", static_cast<int>(panel_.session));
-  RegisterPanel(panel_hwnd_, this);
-  orig_wndproc_ = reinterpret_cast<WNDPROC>(
-      SetWindowLongW(panel_hwnd_, GWL_WNDPROC,
-                     reinterpret_cast<LONG>(&RimeInputMethod::PanelWndProc)));
-  LogLinePtr("Select: SetWindowLong replaced orig_wndproc_=", orig_wndproc_);
 
   RECT rc;
   GetClientRect(panel_hwnd_, &rc);
-  LogLineInt("Select: client width=", rc.right - rc.left);
-  LogLineInt("Select: client height=", rc.bottom - rc.top);
-  RecomputeLayout(&panel_, rc.right - rc.left, rc.bottom - rc.top);
+  int w = rc.right - rc.left;
+  int h = rc.bottom - rc.top;
+  LogLineInt("Select: parent client w=", w);
+  LogLineInt("Select: parent client h=", h);
+
+  // Create our own child window inside the SIP frame and subclass IT.
+  // The SIP framework gives us a parent container in `hwndSip`; per the
+  // standard WinCE/PocketPC SIP pattern (see codeproject.com/Articles/2828
+  // and MS PocketPC SDK MyKB sample) the IM is expected to create a
+  // WS_CHILD | WS_VISIBLE descendant for actual drawing. Subclassing the
+  // parent directly does not intercept WM_PAINT because the parent is a
+  // bare container the framework never paints into -- previous diag run
+  // confirmed parent IsWindowVisible=0 and zero WM_PAINT messages.
+  //
+  // Using the predefined "STATIC" window class avoids having to register
+  // our own. WS_CLIPSIBLINGS keeps a tidy z-order; WS_EX_NOACTIVATE (if
+  // available; harmless on WinCE if ignored) keeps focus on the host app.
+  child_hwnd_ = CreateWindowExW(0, L"STATIC", L"",
+                                WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS,
+                                0, 0, w, h,
+                                panel_hwnd_, NULL, NULL, NULL);
+  if (!child_hwnd_) {
+    LogLineHex("Select: CreateWindowEx FAILED err=", GetLastError());
+    return E_FAIL;
+  }
+  LogLinePtr("Select: created child_hwnd_=", child_hwnd_);
+
+  orig_wndproc_ = reinterpret_cast<WNDPROC>(
+      SetWindowLongW(child_hwnd_, GWL_WNDPROC,
+                     reinterpret_cast<LONG>(&RimeInputMethod::PanelWndProc)));
+  RegisterPanel(child_hwnd_, this);
+  LogLinePtr("Select: subclassed child, orig_wndproc_=", orig_wndproc_);
+
+  RecomputeLayout(&panel_, w, h);
   LogLine("Select returning S_OK");
   return S_OK;
 }
 
 STDMETHODIMP RimeInputMethod::Deselect() {
   LogLine("Deselect entered");
-  if (panel_hwnd_ && orig_wndproc_) {
-    SetWindowLongW(panel_hwnd_, GWL_WNDPROC,
-                   reinterpret_cast<LONG>(orig_wndproc_));
-    UnregisterPanel(panel_hwnd_);
+  if (child_hwnd_) {
+    // DestroyWindow also implicitly unregisters our subclass.
+    UnregisterPanel(child_hwnd_);
+    DestroyWindow(child_hwnd_);
+    child_hwnd_ = NULL;
     orig_wndproc_ = NULL;
   }
   if (panel_.session) {
@@ -163,27 +191,17 @@ STDMETHODIMP RimeInputMethod::Deselect() {
 STDMETHODIMP RimeInputMethod::Showing() {
   LogLine("Showing entered");
   visible_ = true;
-  if (panel_hwnd_) {
-    // Log the current window state so we can diagnose visibility issues.
-    LONG style = GetWindowLongW(panel_hwnd_, GWL_STYLE);
-    LogLineHex("Showing: GWL_STYLE=", static_cast<unsigned int>(style));
-    LogLineInt("Showing: IsWindowVisible=", IsWindowVisible(panel_hwnd_) ? 1 : 0);
-    RECT wr;
-    GetWindowRect(panel_hwnd_, &wr);
-    LogLineInt("Showing: WindowRect.left=", wr.left);
-    LogLineInt("Showing: WindowRect.top=", wr.top);
-    LogLineInt("Showing: WindowRect.right=", wr.right);
-    LogLineInt("Showing: WindowRect.bottom=", wr.bottom);
-
+  if (child_hwnd_) {
+    LONG style = GetWindowLongW(child_hwnd_, GWL_STYLE);
+    LogLineHex("Showing: child GWL_STYLE=", static_cast<unsigned int>(style));
+    LogLineInt("Showing: child IsWindowVisible=", IsWindowVisible(child_hwnd_) ? 1 : 0);
     RefreshFromRime(&panel_);
-    // Force the window visible + immediately repaint. The SIP framework
-    // normally manages visibility itself, but on some WM6 builds the
-    // SW_SHOW is gated on the IM's response; doing it ourselves is
-    // defensive and harmless when redundant.
-    ShowWindow(panel_hwnd_, SW_SHOW);
-    InvalidateRect(panel_hwnd_, NULL, TRUE);
-    UpdateWindow(panel_hwnd_);
-    LogLine("Showing: InvalidateRect + UpdateWindow done");
+    ShowWindow(child_hwnd_, SW_SHOW);
+    InvalidateRect(child_hwnd_, NULL, TRUE);
+    UpdateWindow(child_hwnd_);
+    LogLine("Showing: ShowWindow + Invalidate + Update done");
+  } else {
+    LogLine("Showing: child_hwnd_ is NULL!");
   }
   return S_OK;
 }
@@ -230,8 +248,14 @@ STDMETHODIMP RimeInputMethod::ReceiveSipInfo(SIPINFO* psi) {
   int h = psi->rcSipRect.bottom - psi->rcSipRect.top;
   LogLineInt("ReceiveSipInfo: w=", w);
   LogLineInt("ReceiveSipInfo: h=", h);
-  if (w > 0 && h > 0) RecomputeLayout(&panel_, w, h);
-  if (panel_hwnd_) InvalidateRect(panel_hwnd_, NULL, TRUE);
+  if (w > 0 && h > 0) {
+    RecomputeLayout(&panel_, w, h);
+    if (child_hwnd_) {
+      // Resize our child to match the new SIP rect.
+      MoveWindow(child_hwnd_, 0, 0, w, h, TRUE);
+    }
+  }
+  if (child_hwnd_) InvalidateRect(child_hwnd_, NULL, TRUE);
   return S_OK;
 }
 
