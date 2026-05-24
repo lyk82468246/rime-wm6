@@ -92,6 +92,18 @@ void EnsureClassRegistered() {
   LeaveCriticalSection(&g_class_cs);
 }
 
+// Diagnostic helper -- dump a RECT in the form "tag L=.. T=.. R=.. B=..".
+// We split into separate LogLineInt calls because the existing log
+// helpers don't have a multi-value variant; each line gets its own
+// timestamp but that's fine for a one-shot probe.
+void LogRect(const char* tag, const RECT& r) {
+  LogLine(tag);
+  LogLineInt("    .left   = ", r.left);
+  LogLineInt("    .top    = ", r.top);
+  LogLineInt("    .right  = ", r.right);
+  LogLineInt("    .bottom = ", r.bottom);
+}
+
 }  // namespace
 
 RimeInputMethod::RimeInputMethod()
@@ -191,6 +203,37 @@ STDMETHODIMP RimeInputMethod::Select(HWND hwndSip) {
   ShowWindow(child_hwnd_, SW_SHOWNOACTIVATE);
   LogLine("Select: ShowWindow(SW_SHOWNOACTIVATE) done");
 
+  // Force ourselves to the top of the sibling z-order under panel_hwnd_,
+  // in case the framework also parks STATIC/EDIT children there and we
+  // came up underneath them. SWP_NOACTIVATE preserves focus on the
+  // app being typed into.
+  SetWindowPos(child_hwnd_, HWND_TOP, 0, 0, 0, 0,
+               SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+  LogLine("Select: SetWindowPos HWND_TOP done");
+
+  // Probe: where are we, are we visible, what does the framework's
+  // SIP-frame parent look like? Answers the "WM_PAINT fires but nothing
+  // renders" mystery without another round-trip to the device.
+  {
+    RECT rc_parent_win = {0,0,0,0}, rc_parent_cli = {0,0,0,0};
+    RECT rc_child_win = {0,0,0,0}, rc_child_cli = {0,0,0,0};
+    GetWindowRect(panel_hwnd_, &rc_parent_win);
+    GetClientRect(panel_hwnd_, &rc_parent_cli);
+    GetWindowRect(child_hwnd_, &rc_child_win);
+    GetClientRect(child_hwnd_, &rc_child_cli);
+    LogRect("Select probe: parent GetWindowRect (screen) =", rc_parent_win);
+    LogRect("Select probe: parent GetClientRect          =", rc_parent_cli);
+    LogRect("Select probe: child  GetWindowRect (screen) =", rc_child_win);
+    LogRect("Select probe: child  GetClientRect          =", rc_child_cli);
+    LogLineInt("Select probe: IsWindowVisible(parent) = ", IsWindowVisible(panel_hwnd_) ? 1 : 0);
+    LogLineInt("Select probe: IsWindowVisible(child)  = ", IsWindowVisible(child_hwnd_) ? 1 : 0);
+    LogLineHex("Select probe: GetWindowLong(child,GWL_STYLE)   = ",
+               static_cast<unsigned int>(GetWindowLongW(child_hwnd_, GWL_STYLE)));
+    LogLineHex("Select probe: GetWindowLong(child,GWL_EXSTYLE) = ",
+               static_cast<unsigned int>(GetWindowLongW(child_hwnd_, GWL_EXSTYLE)));
+    LogLinePtr("Select probe: GetParent(child) = ", GetParent(child_hwnd_));
+  }
+
   // Layout uses a sensible default; ReceiveSipInfo will refine it.
   RECT rc;
   GetClientRect(panel_hwnd_, &rc);
@@ -271,6 +314,22 @@ STDMETHODIMP RimeInputMethod::ReceiveSipInfo(SIPINFO* psi) {
     MoveWindow(child_hwnd_, 0, 0, w, h, FALSE);
     RecomputeLayout(&panel_, w, h);
     InvalidateRect(child_hwnd_, NULL, TRUE);
+
+    // Probe: did MoveWindow actually take effect, and where are we
+    // sitting in screen coords after the framework has positioned the
+    // parent SIP frame? If the parent is at y > screen_height we'd
+    // paint correctly but off-screen.
+    RECT rc_self = {0,0,0,0}, rc_parent = {0,0,0,0};
+    GetWindowRect(child_hwnd_, &rc_self);
+    GetWindowRect(panel_hwnd_, &rc_parent);
+    LogRect("ReceiveSipInfo probe: child rect (screen)  =", rc_self);
+    LogRect("ReceiveSipInfo probe: parent rect (screen) =", rc_parent);
+    LogRect("ReceiveSipInfo probe: psi->rcSipRect       =", psi->rcSipRect);
+    LogRect("ReceiveSipInfo probe: psi->rcVisibleDesktop=", psi->rcVisibleDesktop);
+    LogLineInt("ReceiveSipInfo probe: IsWindowVisible(child) = ",
+               IsWindowVisible(child_hwnd_) ? 1 : 0);
+    LogLineInt("ReceiveSipInfo probe: IsWindowVisible(parent)= ",
+               IsWindowVisible(panel_hwnd_) ? 1 : 0);
   }
   return S_OK;
 }
@@ -368,20 +427,52 @@ LRESULT CALLBACK RimeInputMethod::PanelWndProc(HWND hwnd, UINT msg,
       PAINTSTRUCT ps;
       HDC hdc = BeginPaint(hwnd, &ps);
       if (hdc) {
-        // Diagnostic: paint a bright magenta border first, so we can
-        // see at a glance whether our paint code reaches the screen.
         RECT cr;
         GetClientRect(hwnd, &cr);
-        HBRUSH diag = CreateSolidBrush(RGB(255, 0, 255));
-        RECT top    = { cr.left, cr.top, cr.right, cr.top + 2 };
-        RECT bottom = { cr.left, cr.bottom - 2, cr.right, cr.bottom };
-        RECT left   = { cr.left, cr.top, cr.left + 2, cr.bottom };
-        RECT right  = { cr.right - 2, cr.top, cr.right, cr.bottom };
-        FillRect(hdc, &top, diag);
-        FillRect(hdc, &bottom, diag);
-        FillRect(hdc, &left, diag);
-        FillRect(hdc, &right, diag);
-        DeleteObject(diag);
+
+        // Diagnostic probe: where are we ACTUALLY on screen at paint
+        // time? If WM_PAINT logs "painted" but the user sees nothing,
+        // we want to know whether the issue is "we're painting into
+        // the void off-screen" vs "we're correctly positioned but the
+        // composition pipeline drops our output". One sample per
+        // WM_PAINT is fine -- there are usually only a few per show.
+        {
+          RECT rc_win = {0,0,0,0};
+          GetWindowRect(hwnd, &rc_win);
+          RECT rc_parent_win = {0,0,0,0};
+          HWND parent = GetParent(hwnd);
+          if (parent) GetWindowRect(parent, &rc_parent_win);
+          LogRect("WM_PAINT probe: GetWindowRect(self) =", rc_win);
+          LogRect("WM_PAINT probe: GetWindowRect(parent)=", rc_parent_win);
+          LogRect("WM_PAINT probe: ps.rcPaint           =", ps.rcPaint);
+          LogRect("WM_PAINT probe: GetClientRect(self)  =", cr);
+          LogLineInt("WM_PAINT probe: IsWindowVisible(self)   = ", IsWindowVisible(hwnd) ? 1 : 0);
+          LogLineInt("WM_PAINT probe: IsWindowVisible(parent) = ",
+                     (parent && IsWindowVisible(parent)) ? 1 : 0);
+        }
+
+        // STRONG visibility test: paint the ENTIRE client area solid
+        // red. If we can see red on-device, paint reaches the screen
+        // and the keyboard layout / content is the next thing to fix.
+        // If we still see nothing, the rendering surface itself isn't
+        // making it to the framebuffer (composition / z-order /
+        // off-screen parent).
+        HBRUSH red = CreateSolidBrush(RGB(255, 0, 0));
+        FillRect(hdc, &cr, red);
+        DeleteObject(red);
+
+        // Inset a green frame so we can also tell at a glance whether
+        // edge clipping is eating part of our output.
+        HBRUSH green = CreateSolidBrush(RGB(0, 200, 0));
+        RECT top    = { cr.left, cr.top, cr.right, cr.top + 4 };
+        RECT bottom = { cr.left, cr.bottom - 4, cr.right, cr.bottom };
+        RECT left   = { cr.left, cr.top, cr.left + 4, cr.bottom };
+        RECT right  = { cr.right - 4, cr.top, cr.right, cr.bottom };
+        FillRect(hdc, &top, green);
+        FillRect(hdc, &bottom, green);
+        FillRect(hdc, &left, green);
+        FillRect(hdc, &right, green);
+        DeleteObject(green);
 
         PaintPanel(hdc, &self->panel_);
         EndPaint(hwnd, &ps);

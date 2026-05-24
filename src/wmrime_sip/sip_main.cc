@@ -97,7 +97,7 @@ class SipBootstrapper {
     // inspecting the log itself, that the device is running the DLL
     // we think it is (not a stale cached copy from a previous CAB).
     // __DATE__/__TIME__ are baked in at compile time.
-    LogLine("BUILD: " __DATE__ " " __TIME__ " feature=own-window-class-dvorak-style");
+    LogLine("BUILD: " __DATE__ " " __TIME__ " feature=paint-probe-red-fill");
   }
   ~SipBootstrapper() {
     LogLine("=== WMRimeSIP DLL unload (SipBootstrapper dtor) ===");
